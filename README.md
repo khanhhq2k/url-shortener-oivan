@@ -176,4 +176,4 @@ bundle exec rspec
 ## Related docs
 
 - **[SETUP.md](SETUP.md)** — environment, Docker, tests, **Fly.io Redis** (`fly redis create`, `REDIS_URL`, eviction).
-- **[ASSIGNMENT_REQUIREMENTS.md](ASSIGNMENT_REQUIREMENTS.md)** — interpreted requirements checklist.
+
