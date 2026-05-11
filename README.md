@@ -6,9 +6,7 @@ ShortLink-style **JSON API** (Ruby / Rails): **`POST /encode`** and **`POST /dec
 
 ## Submission and demo deployment
 
-- Push to **GitHub** (public repo is fine per brief), then submit on the assignment portal.
 - Run locally: [SETUP.md](SETUP.md) (Docker Compose at the top).
-- Deploy to any **free-tier host** you prefer; this repo includes **`fly.toml`** (Puma listens on **`PORT`**, default **8080** on Fly) and a full **Fly.io** walkthrough in [SETUP.md — Production (Fly.io)](SETUP.md#production-flyio). Set secrets such as **`DATABASE_URL`** (from Fly Postgres attach), **`REDIS_URL`**, **`RAILS_MASTER_KEY`**, and optionally **`PUBLIC_APP_ROOT`** for stable short links.
 - **Live demo (Fly.io):** [https://bitly-clone-assignment.fly.dev/](https://bitly-clone-assignment.fly.dev/) — health check: [https://bitly-clone-assignment.fly.dev/up](https://bitly-clone-assignment.fly.dev/up).
 
 ### Quick curls
