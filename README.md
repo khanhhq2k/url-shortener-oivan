@@ -121,6 +121,9 @@ Two layers keep **recently used** decode entries favored under skewed traffic (e
 
 This demo doesn’t require implementing full large-scale infrastructure, but it should show an understanding of the bottleneck and what to do next.
 
+<img width="781" height="381" alt="diagram" src="https://github.com/user-attachments/assets/b38dada8-2edb-40b5-a936-c0a8469dd7ef" />
+
+
 - **Target scale:** around **10k–100k requests/sec**.
 - Assume **read-heavy traffic**, so we optimize the `/decode` path.
 - **API gateway + split services (conceptual):** the gateway routes decode requests to **read services** and encode requests to **write services**. That way, autoscaling can focus on the read side without over-provisioning writes.
