@@ -14,18 +14,18 @@ ShortLink-style **JSON API** (Ruby / Rails): **`POST /encode`** and **`POST /dec
 ### Quick curls
 
 ```bash
-curl -X POST http://localhost:3000/encode \
+curl -X POST https://bitly-clone-assignment.fly.dev/encode \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com/long/path"}'
 ```
 
 ```bash
-curl -X POST http://localhost:3000/decode \
+curl -X POST https://bitly-clone-assignment.fly.dev/decode \
   -H 'Content-Type: application/json' \
-  -d '{"url":"http://localhost:3000/<slug>"}'
+  -d '{"url":"https://bitly-clone-assignment.fly.dev/<slug>"}'
 ```
 
-Replace host and `<slug>` with values from the encode response (same JSON pattern as `/encode`). For the public Fly deployment, use `https://bitly-clone-assignment.fly.dev` as the host instead of `localhost:3000`.
+Replace `<slug>` with the path segment from the encode response’s `shortened_link`. For **local** runs (Docker Compose), use `http://localhost:3000` as the host instead.
 
 ---
 
