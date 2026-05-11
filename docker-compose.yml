@@ -1,0 +1,59 @@
+# Local development: Postgres + Redis + Rails (no local PostgreSQL/Redis required).
+#
+#   docker compose up --build
+#   open http://localhost:3000
+#
+# After Gemfile changes: docker compose build web
+#
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: bitly_clone_assignment_development
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # Match production intent: approximate LRU eviction when memory is full (Pareto hot set stays).
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: sh -c "bin/rails db:prepare && bin/rails server -b 0.0.0.0 -p 3000"
+    volumes:
+      - .:/rails
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/bitly_clone_assignment_development
+      REDIS_URL: redis://redis:6379/0
+      RAILS_ENV: development
+      BINDING: 0.0.0.0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

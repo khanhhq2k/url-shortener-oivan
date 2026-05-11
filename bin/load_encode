@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run many POST /encode requests (default 100). Usage:
+#   bin/load_encode
+#   COUNT=500 BASE_URL=http://localhost:3000 bin/load_encode
+
+set -euo pipefail
+
+BASE="${BASE_URL:-http://localhost:3000}"
+COUNT="${COUNT:-100}"
+
+ok=0
+fail=0
+
+for i in $(seq 1 "$COUNT"); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE/encode" \
+    -H 'Content-Type: application/json' \
+    -d "{\"url\":\"https://example.com/bench/$i\"}")
+  if [[ "$code" == "200" ]]; then
+    ((ok++)) || true
+  else
+    ((fail++)) || true
+    echo "request $i -> HTTP $code" >&2
+  fi
+done
+
+echo "encode x$COUNT: ok=$ok fail=$fail"
