@@ -3,7 +3,7 @@
 
 # This Dockerfile is designed for production, not development. Use with Kamal or build'n'run by hand:
 # docker build -t bitly_clone_assignment .
-# docker run -d -p 80:80 -e RAILS_MASTER_KEY=<value from config/master.key> --name bitly_clone_assignment bitly_clone_assignment
+# docker run -d -p 8080:8080 -e RAILS_MASTER_KEY=<value from config/master.key> --name bitly_clone_assignment bitly_clone_assignment
 
 # For a containerized dev environment, see Dev Containers: https://guides.rubyonrails.org/getting_started_with_devcontainer.html
 
@@ -59,15 +59,25 @@ FROM base
 # Run and own only the runtime files as a non-root user for security
 RUN groupadd --system --gid 1000 rails && \
     useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
-USER 1000:1000
 
 # Copy built artifacts: gems, application
 COPY --chown=rails:rails --from=build "${BUNDLE_PATH}" "${BUNDLE_PATH}"
 COPY --chown=rails:rails --from=build /rails /rails
 
+# Remote builders / tar uploads can preserve odd modes; keep tree owned and usable by `rails`.
+RUN chown -R rails:rails /rails "${BUNDLE_PATH}" && \
+    chmod -R u+rwX /rails "${BUNDLE_PATH}" && \
+    find /rails/bin -maxdepth 1 -type f -exec chmod ug+x {} \;
+
+# Thruster public HTTP port (must match Fly `internal_port`). Puma listens on TARGET_PORT; Thruster sets PORT for the child.
+ENV HTTP_PORT="8080" \
+    TARGET_PORT="3000"
+
+USER 1000:1000
+
 # Entrypoint prepares the database.
 ENTRYPOINT ["/rails/bin/docker-entrypoint"]
 
 # Start server via Thruster by default, this can be overwritten at runtime
-EXPOSE 80
+EXPOSE 8080
 CMD ["./bin/thrust", "./bin/rails", "server"]

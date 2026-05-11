@@ -8,7 +8,8 @@ ShortLink-style **JSON API** (Ruby / Rails): **`POST /encode`** and **`POST /dec
 
 - Push to **GitHub** (public repo is fine per brief), then submit on the assignment portal.
 - Run locally: [SETUP.md](SETUP.md) (Docker Compose at the top).
-- Deploy to any **free-tier host** you prefer; this repo is wired for a **Docker** production image and documents **Fly.io** Redis in [SETUP.md](SETUP.md#flyio-redis-lru-and-eviction). Set app secrets such as **`DATABASE_URL`**, **`REDIS_URL`**, and optionally **`PUBLIC_APP_ROOT`** for stable short links.
+- Deploy to any **free-tier host** you prefer; this repo includes **`fly.toml`** (Puma listens on **`PORT`**, default **8080** on Fly) and a full **Fly.io** walkthrough in [SETUP.md — Production (Fly.io)](SETUP.md#production-flyio). Set secrets such as **`DATABASE_URL`** (from Fly Postgres attach), **`REDIS_URL`**, **`RAILS_MASTER_KEY`**, and optionally **`PUBLIC_APP_ROOT`** for stable short links.
+- **Live demo (Fly.io):** [https://bitly-clone-assignment.fly.dev/](https://bitly-clone-assignment.fly.dev/) — health check: [https://bitly-clone-assignment.fly.dev/up](https://bitly-clone-assignment.fly.dev/up).
 
 ### Quick curls
 
@@ -24,7 +25,7 @@ curl -X POST http://localhost:3000/decode \
   -d '{"url":"http://localhost:3000/<slug>"}'
 ```
 
-Replace host and `<slug>` with values from the encode response (same JSON pattern as `/encode`).
+Replace host and `<slug>` with values from the encode response (same JSON pattern as `/encode`). For the public Fly deployment, use `https://bitly-clone-assignment.fly.dev` as the host instead of `localhost:3000`.
 
 ---
 

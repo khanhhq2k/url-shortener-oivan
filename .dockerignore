@@ -1,4 +1,5 @@
 # See https://docs.docker.com/engine/reference/builder/#dockerignore-file for more about ignoring files.
+# Fly.io: keep the root Dockerfile in the build context (do not add `/Dockerfile` here).
 
 # Ignore git directory.
 /.git/
@@ -40,6 +41,8 @@
 # Ignore development files
 /.devcontainer
 
-# Ignore Docker-related files
-/.dockerignore
-/Dockerfile*
+# Local bundle (wrong platform gems on macOS); image runs `bundle install` in the build stage.
+/vendor/bundle
+
+# Dev-only Dockerfile — keep root `Dockerfile` in the context (Fly remote builds need it in the tarball).
+/Dockerfile.dev

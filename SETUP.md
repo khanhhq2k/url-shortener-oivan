@@ -87,7 +87,111 @@ You still do **not** need a standalone Postgres install as long as the `db` cont
 
 ## Production (Fly.io)
 
-See the main [README](README.md) for deploy notes.
+See the main [README](README.md) for high-level notes. This section is the **step-by-step deploy** guide.
+
+### Prerequisites
+
+- [Fly CLI](https://fly.io/docs/flyctl/install/) (`fly version`)
+- Logged in: `fly auth login`
+- This repo’s production image: root **`Dockerfile`**. `bin/docker-entrypoint` runs **`rails db:prepare`** when the container starts **`rails server`**, so the schema is applied on boot.
+
+### 1. App name and `fly.toml`
+
+- Open **`fly.toml`** and set **`app`** to a unique Fly app name (or run `fly apps create <name>` and match that name).
+- Set **`primary_region`** to the region closest to you (same region as Postgres and Redis is best).
+
+### 2. Create the Fly app (if it does not exist yet)
+
+```bash
+fly apps create <your-app-name>
+```
+
+Or run **`fly launch`** once from the repo root and align the generated `fly.toml` with this project’s `Dockerfile` and **`internal_port` (8080)** as in the committed `fly.toml`. Production uses **Thruster**: **`HTTP_PORT`** must match `internal_port`; **`TARGET_PORT`** is where Puma listens (see `[env]` in `fly.toml`).
+
+### 3. Postgres (Fly Postgres)
+
+Create a Postgres cluster (pick region to match the app):
+
+```bash
+fly postgres create --name <your-pg-cluster-name> --region <region>
+```
+
+Attach it to the Rails app (Fly wires **`DATABASE_URL`** on the app):
+
+```bash
+fly postgres attach <your-pg-cluster-name> -a <your-app-name>
+```
+
+Confirm: `fly secrets list -a <your-app-name>` should show `DATABASE_URL` (or equivalent).
+
+### 4. Redis (Upstash on Fly)
+
+Create Redis with eviction (see [Fly.io Redis LRU and eviction](#flyio-redis-lru-and-eviction) below). Example:
+
+```bash
+fly redis create --name <your-redis-name> --region <region> --enable-eviction
+```
+
+Get the private URL:
+
+```bash
+fly redis status <your-redis-name>
+```
+
+Set it on the app:
+
+```bash
+fly secrets set REDIS_URL="<paste Private URL from status output>" -a <your-app-name>
+```
+
+### 5. Rails master key
+
+Production needs **`RAILS_MASTER_KEY`** to decrypt `config/credentials.yml.enc`. From your machine (never commit `config/master.key`):
+
+```bash
+fly secrets set RAILS_MASTER_KEY="$(cat config/master.key)" -a <your-app-name>
+```
+
+### 6. Public URL for short links (recommended)
+
+So `/encode` returns stable `https://…` links instead of an internal hostname:
+
+```bash
+fly secrets set PUBLIC_APP_ROOT="https://<your-app-name>.fly.dev" -a <your-app-name>
+```
+
+Use your real Fly hostname (or a custom domain if you add one).
+
+### 7. Deploy
+
+```bash
+fly deploy -a <your-app-name>
+```
+
+Open the app:
+
+```bash
+fly apps open -a <your-app-name>
+```
+
+Health check: `https://<your-app-name>.fly.dev/up`
+
+### 8. Smoke test (encode / decode)
+
+```bash
+curl -s -X POST "https://<your-app-name>.fly.dev/encode" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/fly-test"}'
+```
+
+Then decode with the returned `shortened_link` in the JSON body (same as local).
+
+### Useful commands
+
+- Logs: `fly logs -a <your-app-name>`
+- SSH: `fly ssh console -a <your-app-name>`
+- Rails console: `fly console -a <your-app-name>` (if enabled for your setup)
+- Scale VM: `fly scale show` / `fly scale memory` (see Fly docs)
 
 ### Fly.io Redis LRU and eviction
 
