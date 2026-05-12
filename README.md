@@ -136,7 +136,31 @@ Encode and decode are split into separate services — decode scales independent
 
 ### Monitoring
 
-Redis hit rate, eviction count, cache-miss latency, Postgres replication lag, Postgres query time per shard.
+Grouped by layer — each metric should feed into dashboards and drive alerts in a live environment.
+
+**Cache (Redis)**
+| Metric | Why it matters | Alert threshold |
+|--------|---------------|-----------------|
+| Hit rate | Primary health indicator — a drop signals cold start, eviction storm, or Redis failure | < 85% |
+| Eviction rate | Keys dropped under memory pressure — high rate means Redis is undersized or TTL needs tuning | any sustained spike |
+| Memory usage | Approaching `maxmemory` cap is a warning before evictions start | > 80% of cap |
+| Connection pool wait | Blocked threads waiting for a Redis connection indicate pool exhaustion | > 0 queued |
+
+**Database (Postgres)**
+| Metric | Why it matters | Alert threshold |
+|--------|---------------|-----------------|
+| Replication lag | In Phase 2/3, decode misses hit the replica — high lag means freshly encoded slugs can't be decoded yet | > 5 s |
+| Query latency p95 / p99 | Track encode and decode queries separately; they have different access patterns | > 50 ms p99 |
+| Connection count | With PgBouncer, watch both Postgres connections and PgBouncer queue depth | queue depth > 0 |
+| Slow query log | Catches unindexed access early; `slug` and `original_url` indexes should keep lookups O(log n) | any query > 100 ms |
+
+**Application (Rails)**
+| Metric | Why it matters | Alert threshold |
+|--------|---------------|-----------------|
+| Request rate by endpoint | Encode vs decode split reveals traffic shape; an encode spike may indicate abuse | encode rate anomaly |
+| Error rate by status | 422 (bad input), 404 (unknown slug), 500 (app crash) — each has a different root cause | 500 rate > 0.1% |
+| Response latency p50 / p99 | Decode should be faster than encode (cache hit); divergence signals a cache or DB problem | p99 > 100 ms |
+| Thread pool saturation | Puma threads maxed means requests are queuing; scale out or tune thread count | saturation > 80% |
 
 ---
 
