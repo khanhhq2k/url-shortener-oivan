@@ -142,13 +142,17 @@ Redis hit rate, eviction count, cache-miss latency, Postgres replication lag, Po
 
 ## Security
 
-| Risk | Mitigation |
-|------|------------|
-| **Open redirect / phishing** — short links hide destinations | Scheme restricted to `http`/`https`; max URL length enforced (2048 chars); future: user warnings, blocklists |
-| **Enumeration** — sequential slugs are guessable | Documented; production: rate limiting + anomaly detection |
-| **DoS** — large bodies or abusive traffic | Max URL length validation; rate limiting at edge in production |
-| **Injection** — malicious inputs in logs or queries | Parameterized queries throughout; no server-side URL fetching (no SSRF vector) |
-| **Log exposure** — URLs appear in access logs | Redact or sample JSON bodies in production logging |
+**Threat model:** the API accepts arbitrary URLs from unauthenticated clients and stores them permanently. The attack surface splits into two layers: inputs to this service (crafted payloads, abusive traffic, enumeration) and downstream effects on end users who follow shortened links to destinations this service does not control.
+
+| Risk | Mitigation | Status |
+|------|------------|--------|
+| **Open redirect / phishing** — short links hide destinations | Scheme restricted to `http`/`https`; max URL length 2048 chars | ✓ in code |
+| **Malicious URL content** — any valid URL is shortened regardless of destination | No content validation today; production: Safe Browsing API or blocklist check on encode | future |
+| **Unauthenticated access** — any client can encode/decode without credentials | Acceptable for a demo; production: API keys or token auth to prevent bulk abuse | future |
+| **Enumeration** — sequential slugs make all stored URLs discoverable by iteration | Rate limiting + anomaly detection at the API gateway | production |
+| **DoS** — large payloads or high-volume traffic | Max URL length enforced in the model; rate limiting at the edge | partial |
+| **Injection** — malicious inputs in queries or logs | Parameterized queries throughout; no server-side URL fetching (eliminates SSRF) | ✓ in code |
+| **Log exposure** — full URLs appear in access logs | Redact or sample JSON request bodies in production log config | production |
 
 ---
 
