@@ -77,23 +77,64 @@ PostgreSQL is the source of truth. Redis is a cache only — if it restarts or e
 
 ## Scaling
 
-Target: **10k–100k requests/sec**, read-heavy traffic.
+Target: **10k–100k requests/sec**, read-heavy traffic. Decode vastly outnumbers encode (a single viral link can generate millions of hits), so every phase optimizes the read path first.
 
-<img width="781" height="381" alt="scaling diagram" src="https://github.com/user-attachments/assets/b38dada8-2edb-40b5-a936-c0a8469dd7ef" />
+### Phase 1 — current state (~1k RPS)
 
-- **Split encode/decode services:** API gateway routes `/decode` to read-optimized instances and `/encode` to write services. Autoscaling focuses on the read side.
-- **Redis absorbs reads:** hot slugs stay cached; Postgres only sees misses.
-- **Postgres replicas:** at least one replica for failover; primary handles writes only.
-- **Redis HA:** replication + automatic failover, eviction bounded by LRU policy.
+```mermaid
+flowchart LR
+    C[Client] --> A[Rails App]
+    A -->|read / write| PG[(PostgreSQL)]
+    A -->|decode cache| R[(Redis)]
+```
 
-In production: monitor Redis hit rate, eviction count, cache-miss latency, and Postgres query time.
+Single app instance. Postgres handles everything. Redis caches decode. This is what's deployed today.
 
-### Collision handling at scale
+### Phase 2 — horizontal read scaling (~1k–10k RPS)
 
-With a single Postgres primary, collisions are impossible by design (see above). If writes scale beyond one primary:
+```mermaid
+flowchart LR
+    C[Client] --> LB[Load Balancer]
+    LB --> A1[Rails App] & A2[Rails App] & A3[Rails App]
 
-- A single "increment on every request" counter endpoint becomes a bottleneck.
-- Better options: **ID range leasing** (each writer claims a non-overlapping block of IDs) or a **distributed ID scheme** (Snowflake/ULID-style), which lets writers allocate IDs independently without coordination on every request.
+    A1 & A2 & A3 -->|encode writes| PB[PgBouncer]
+    PB --> PGP[(PostgreSQL Primary)]
+    PGP -.->|replication| PGR[(PostgreSQL Replica)]
+
+    A1 & A2 & A3 -->|decode cache miss| PGR
+    A1 & A2 & A3 --> RS[(Redis Sentinel HA)]
+```
+
+Rails is stateless — scale out horizontally. PgBouncer handles connection pooling (many app threads, few Postgres connections). Decode cache misses go to the read replica instead of the primary. Redis Sentinel provides failover so the cache stays up.
+
+**Tradeoffs:** PgBouncer adds ops complexity. The read replica has replication lag — newly encoded slugs have a short window where decode may miss the replica and fall back to the primary. Acceptable since encode is idempotent and rare.
+
+### Phase 3 — split services + sharded writes (~10k–100k RPS)
+
+```mermaid
+flowchart LR
+    C[Client] --> LB[Load Balancer]
+    LB -->|POST /encode| ES[Encode Service ×N]
+    LB -->|POST /decode| DS[Decode Service ×N]
+
+    ES -->|INCRBY global:slug_counter| RC[(Redis Cluster)]
+    ES --> PB[PgBouncer]
+    PB --> SA[(PG Shard A)] & SB[(PG Shard B)]
+    SA & SB -.->|replication| RPL[(Read Replicas)]
+
+    DS --> RC
+    DS -->|cache miss| RPL
+```
+
+Encode and decode are split into separate services — decode scales independently without over-provisioning write capacity. Postgres write path shards across multiple primaries.
+
+**Centralized counter (range leasing):** each encoder calls `INCRBY global:slug_counter 1000` on the shared Redis Cluster key — claims a batch of 1000 IDs atomically in one network hop. It then mints slugs locally from that batch with no further coordination. Counter traffic is ~0.1% of encode volume. Encode is the only path that depends on the counter key; decode is unaffected if the key is temporarily unavailable.
+
+**Tradeoffs:** encode now depends on Redis for ID allocation — mitigated by Redis Cluster HA. On service restart, the unused remainder of a batch is abandoned, leaving gaps in the ID sequence. Gaps in Base62 slugs are harmless; the `UNIQUE` index on `slug` remains the correctness guarantee.
+
+### Monitoring
+
+Redis hit rate, eviction count, cache-miss latency, Postgres replication lag, Postgres query time per shard.
 
 ---
 
