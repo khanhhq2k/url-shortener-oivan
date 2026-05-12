@@ -8,6 +8,8 @@ A Ruby on Rails JSON API that shortens URLs and resolves them back to the origin
 
 **Live demo (Fly.io):** [https://bitly-clone-assignment.fly.dev/](https://bitly-clone-assignment.fly.dev/) · health: [/up](https://bitly-clone-assignment.fly.dev/up)
 
+**Run locally:** `docker compose up --build` — full instructions in [SETUP.md](SETUP.md)
+
 ---
 
 ## Quick start
@@ -17,16 +19,16 @@ A Ruby on Rails JSON API that shortens URLs and resolves them back to the origin
 curl -X POST https://bitly-clone-assignment.fly.dev/encode \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com/long/path"}'
-# → {"shortened_link":"https://bitly-clone-assignment.fly.dev/1"}
+# → {"shortened_link":"https://bitly-clone-assignment.fly.dev/<slug>"}
 
-# Resolve it back
+# Resolve it back (replace <slug> with the value from the encode response)
 curl -X POST https://bitly-clone-assignment.fly.dev/decode \
   -H 'Content-Type: application/json' \
-  -d '{"url":"https://bitly-clone-assignment.fly.dev/1"}'
+  -d '{"url":"https://bitly-clone-assignment.fly.dev/<slug>"}'
 # → {"original_link":"https://example.com/long/path"}
 ```
 
-Replace the slug with the value from your encode response. For local runs, use `http://localhost:3000` — see [SETUP.md](SETUP.md).
+For local runs, use `http://localhost:3000` — see [SETUP.md](SETUP.md).
 
 ---
 
@@ -102,7 +104,7 @@ flowchart LR
     PGP -.->|replication| PGR[(PostgreSQL Replica)]
 
     A1 & A2 & A3 -->|decode cache miss| PGR
-    A1 & A2 & A3 --> RS[(Redis Sentinel HA)]
+    A1 & A2 & A3 -->|decode cache| RS[(Redis Sentinel HA)]
 ```
 
 Rails is stateless — scale out horizontally. PgBouncer handles connection pooling (many app threads, few Postgres connections). Decode cache misses go to the read replica instead of the primary. Redis Sentinel provides failover so the cache stays up.
