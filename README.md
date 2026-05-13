@@ -234,3 +234,17 @@ Full setup and test commands (Docker, host Ruby, env vars): [SETUP.md](SETUP.md)
 - **Redis** — decode cache only; non-authoritative (optional; app degrades gracefully without it)
 - **Docker Compose** — app + Postgres + Redis for local development
 - **RSpec** — request specs ([`spec/requests/`](spec/requests/)) and service specs ([`spec/services/`](spec/services/))
+
+---
+
+## Further improvements
+
+Features and hardening left out of this demo but worth building in a production service:
+
+| Improvement | Why it matters |
+|-------------|----------------|
+| **Custom aliases** — optional `custom_alias` on `/encode` (e.g. `short.ly/black-friday-2026`) | Branding and memorability; primary differentiator for a paid tier. Implementation: validate `^[a-zA-Z0-9_-]{3,30}$`, insert directly into `slug` bypassing the sequencer, `INSERT ... ON CONFLICT` → `409 Conflict` |
+| **HMAC-based slug migration** — replace `Base62(id)` with `Base58(HMAC-SHA256(secret, id))[0,10]` | Closes the enumeration attack documented in [Design](#design) and [Security](#security) |
+| **Authentication / API keys** — token auth on encode | Prevents bulk abuse; enables per-customer rate limits and audit trails |
+| **Link expiry** — optional `expires_at` on encode | Reduces stale data and adds access-control primitives for time-limited campaigns |
+| **Click analytics** — count decode hits per slug | Basic product metric; drives decisions about cache sizing and popular-link promotion |
