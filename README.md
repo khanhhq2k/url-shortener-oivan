@@ -57,17 +57,50 @@ Set `PUBLIC_APP_ROOT` in production to control the base URL returned in `shorten
 
 ### Slug generation and uniqueness
 
-Each row in the `links` table gets a numeric primary key `id` assigned by Postgres. After insert, the app Base62-encodes that `id` and stores it as `slug` (with a `UNIQUE` index).
+**Current implementation:** each row gets a numeric primary key `id`. On insert, `Base62(id)` is stored as `slug` (unique index). Same long URL → same record → same slug (`original_url` unique constraint).
 
-- **No collisions:** Postgres `id` values are monotonically unique. `Base62(id)` is injective — two different rows cannot produce the same slug. The `UNIQUE` index on `slug` enforces this as a belt-and-suspenders constraint.
-- **Idempotent encode:** `original_url` also carries a `UNIQUE` constraint. Submitting the same long URL twice returns the same record and the same slug.
-- **Drawback:** slugs correlate with insertion order and are guessable. Production mitigations (rate limiting, anomaly detection, opaque random tokens) are documented in [Security](#security).
+**The enumeration problem:** `Base62(id)` is fully reversible. Knowing one slug → decode to `id` → iterate `id ± 1` → re-encode → enumerate every URL in the database. URL shorteners often store sensitive destinations (invite tokens, private share links, credentials in query strings) — the slug must be unguessable, not just short.
+
+**Phase 1 upgrade — HMAC-based slug:**
+
+```
+slug = Base58( HMAC-SHA256(secret_key, id.to_s) )[0, 10]
+```
+
+- Uses the existing DB `id` as input — no new dependencies, no coordination needed
+- 10 chars, Base58 alphabet (drops 0/O/I/l to avoid visual ambiguity)
+- `secret_key` stored in Rails credentials; makes slugs undeducible even if the `id` sequence is known
+- On UNIQUE conflict: retry with `HMAC(secret_key, "#{id}:#{attempt}")`
+- **UNIQUE constraint + retry-on-conflict remains the correctness guarantee**
+
+**Phase 3 upgrade — Snowflake-style ID:**
+
+When writes shard across multiple Postgres primaries there is no single auto-increment `id`. Use a 64-bit composite:
+
+```
+[ 41-bit timestamp ms ][ 10-bit machine_id ][ 13-bit random ]
+```
+
+Encode to Base58 (~11 chars). Each instance mints IDs independently — no coordination per request. Removes the Redis counter dependency. UNIQUE constraint still present as a safety net.
+
+**Collision at scale:**
+
+| Slug | Key space | Collision rate @ 12B records | Expected pairs |
+|------|-----------|------------------------------|----------------|
+| 8-char Base58 | 58⁸ ≈ 1.28 × 10¹⁴ | 1 in 10,000 | ~562,500 |
+| 10-char Base58 | 58¹⁰ ≈ 4.3 × 10¹⁷ | 1 in 35M | ~167 |
+
+8 chars causes retry storms at scale. 10 chars is the sweet spot for 10–100B records. UNIQUE + retry is mandatory at both lengths.
+
+**Migration:** old Base62 slugs shared externally must stay decodable — on decode, try the new scheme first and fall back to legacy `Base62` for slugs created before the migration.
 
 ### Persistence after restart
 
 PostgreSQL is the source of truth. Redis is a cache only — if it restarts or evicts entries, `POST /decode` still resolves from Postgres and repopulates the cache on the next hit.
 
 ### Decode cache (Redis)
+
+The `url` field on `/decode` accepts the full short URL or just the slug; the service extracts the path segment before the cache lookup.
 
 1. **Read from Redis** (`shortlink:v1:<slug>`).
 2. **Cache miss:** load from Postgres, then write back to Redis.
@@ -132,7 +165,9 @@ Encode and decode are split into separate services — decode scales independent
 
 **Centralized counter (range leasing):** each encoder calls `INCRBY global:slug_counter 1000` on the shared Redis Cluster key — claims a batch of 1000 IDs atomically in one network hop. It then mints slugs locally from that batch with no further coordination. Counter traffic is ~0.1% of encode volume. Encode is the only path that depends on the counter key; decode is unaffected if the key is temporarily unavailable.
 
-**Tradeoffs:** encode now depends on Redis for ID allocation — mitigated by Redis Cluster HA. On service restart, the unused remainder of a batch is abandoned, leaving gaps in the ID sequence. Gaps in Base62 slugs are harmless; the `UNIQUE` index on `slug` remains the correctness guarantee.
+**Tradeoffs:** encode now depends on Redis for ID allocation — mitigated by Redis Cluster HA. On service restart, the unused remainder of a batch is abandoned, leaving gaps in the ID sequence. Gaps in slugs are harmless; the `UNIQUE` index on `slug` remains the correctness guarantee.
+
+**Alternative — Snowflake-style IDs** remove the Redis counter dependency entirely: each encoder mints its own 64-bit ID (`[timestamp][machine_id][random]`) with no coordination. See [Slug generation](#slug-generation-and-uniqueness) for the full comparison.
 
 ### Monitoring
 
@@ -144,7 +179,7 @@ Grouped by layer — each metric should feed into dashboards and drive alerts in
 | Hit rate | Primary health indicator — a drop signals cold start, eviction storm, or Redis failure | < 85% |
 | Eviction rate | Keys dropped under memory pressure — high rate means Redis is undersized or TTL needs tuning | any sustained spike |
 | Memory usage | Approaching `maxmemory` cap is a warning before evictions start | > 80% of cap |
-| Connection pool wait | Blocked threads waiting for a Redis connection indicate pool exhaustion | > 0 queued |
+| Connection pool wait | Blocked threads waiting for a Redis connection indicate pool exhaustion | > 0 |
 
 **Database (Postgres)**
 | Metric | Why it matters | Alert threshold |
@@ -173,7 +208,7 @@ Grouped by layer — each metric should feed into dashboards and drive alerts in
 | **Open redirect / phishing** — short links hide destinations | Scheme restricted to `http`/`https`; max URL length 2048 chars | ✓ in code |
 | **Malicious URL content** — any valid URL is shortened regardless of destination | No content validation today; production: Safe Browsing API or blocklist check on encode | future |
 | **Unauthenticated access** — any client can encode/decode without credentials | Acceptable for a demo; production: API keys or token auth to prevent bulk abuse | future |
-| **Enumeration** — sequential slugs make all stored URLs discoverable by iteration | Rate limiting + anomaly detection at the API gateway | production |
+| **Enumeration** — sequential slugs make all stored URLs discoverable by iteration | Phase 1: migrate to HMAC-based non-sequential slugs (see [Design](#design)); production: rate limiting + anomaly detection | partial |
 | **DoS** — large payloads or high-volume traffic | Max URL length enforced in the model; rate limiting at the edge | partial |
 | **Injection** — malicious inputs in queries or logs | Parameterized queries throughout; no server-side URL fetching (eliminates SSRF) | ✓ in code |
 | **Log exposure** — full URLs appear in access logs | Redact or sample JSON request bodies in production log config | production |
