@@ -167,7 +167,7 @@ Encode and decode are split into separate services — decode scales independent
 
 **Tradeoffs:** encode now depends on Redis for ID allocation — mitigated by Redis Cluster HA. On service restart, the unused remainder of a batch is abandoned, leaving gaps in the ID sequence. Gaps in slugs are harmless; the `UNIQUE` index on `slug` remains the correctness guarantee.
 
-**Alternative — Snowflake-style IDs** remove the Redis counter dependency entirely: each encoder mints its own 64-bit ID (`[timestamp][machine_id][random]`) with no coordination. See [Slug generation](#slug-generation-and-uniqueness) for the full comparison.
+**Beyond Phase 3:** if range leasing itself becomes a bottleneck (multi-region writes, extremely high encode volume), Snowflake-style IDs are the next evolution — each instance mints IDs independently with zero coordination, eliminating the Redis counter entirely. See [Slug generation](#slug-generation-and-uniqueness).
 
 ### Monitoring
 
