@@ -15,6 +15,9 @@ A Ruby on Rails JSON API that shortens URLs and resolves them back to the origin
 ## Quick start
 
 ```bash
+# Run this first to wake up the Fly.io instance (free tier spins down when idle)
+curl https://bitly-clone-assignment.fly.dev/up
+
 # Shorten a URL
 curl -X POST https://bitly-clone-assignment.fly.dev/encode \
   -H 'Content-Type: application/json' \
